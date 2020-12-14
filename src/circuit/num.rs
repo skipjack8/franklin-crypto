@@ -1,32 +1,25 @@
-use bellman::pairing::{
-    Engine,
-};
-
-use bellman::pairing::ff::{
-    Field,
-    PrimeField,
-    PrimeFieldRepr,
-    BitIterator
-};
+use std::ops::{Add, Sub};
 
 use bellman::{
-    SynthesisError,
     ConstraintSystem,
     LinearCombination,
+    SynthesisError,
     Variable
 };
-
-use super::{
-    Assignment
+use bellman::pairing::Engine;
+use bellman::pairing::ff::{
+    BitIterator,
+    Field,
+    PrimeField,
+    PrimeFieldRepr
 };
 
+use super::Assignment;
 use super::boolean::{
     self,
-    Boolean,
-    AllocatedBit
+    AllocatedBit,
+    Boolean
 };
-
-use std::ops::{Add, Sub};
 
 pub struct AllocatedNum<E: Engine> {
     value: Option<E::Fr>,
@@ -83,7 +76,7 @@ impl<E: Engine> AllocatedNum<E> {
     {
         let new_value = Some(E::Fr::zero());
 
-        let var = cs.alloc(|| "zero num", 
+        let var = cs.alloc(|| "zero num",
             || {
                 Ok(E::Fr::zero())
             }
@@ -93,7 +86,7 @@ impl<E: Engine> AllocatedNum<E> {
             || "enforce one is actually one",
             |lc| lc + var,
             |lc| lc + CS::one(),
-            |lc| lc 
+            |lc| lc
         );
 
         Ok(AllocatedNum {
@@ -350,6 +343,33 @@ impl<E: Engine> AllocatedNum<E> {
         Ok(data_packed)
     }
 
+    /// Return reduced allocated number given its bit representation
+    pub fn pack_bits_reduced_to_element<CS: ConstraintSystem<E>>(
+        mut cs: CS,
+        bits: &[Boolean],
+    ) -> Result<Self, SynthesisError> {
+
+        let mut data_from_lc = Num::<E>::zero();
+        let mut coeff = E::Fr::one();
+        for bit in bits {
+            data_from_lc = data_from_lc.add_bool_with_coeff(CS::one(), &bit, coeff);
+            coeff.double();
+        }
+
+        let data_packed = AllocatedNum::alloc(cs.namespace(|| "allocate packed number"), || {
+            Ok(*data_from_lc.get_value().get()?)
+        })?;
+
+        cs.enforce(
+            || "pack bits to number",
+            |zero| zero + data_packed.get_variable(),
+            |zero| zero + CS::one(),
+            |_| data_from_lc.lc(E::Fr::one()),
+        );
+
+        Ok(data_packed)
+    }
+
     pub fn add<CS>(
         &self,
         mut cs: CS,
@@ -508,7 +528,7 @@ impl<E: Engine> AllocatedNum<E> {
             variable: var
         })
     }
-    
+
     pub fn pow<CS>(
         &self,
         mut cs: CS,
@@ -519,7 +539,7 @@ impl<E: Engine> AllocatedNum<E> {
         let power_bits: Vec<bool> = BitIterator::new(power.into_repr()).collect();
         let mut temp = AllocatedNum::alloc(cs.namespace(||"one"), ||Ok(E::Fr::one()))?;
         temp.assert_number(cs.namespace(||"assert_one"), &E::Fr::one())?;
-        
+
         for (i, bit) in power_bits.iter().enumerate(){
             temp = temp.square(cs.namespace(||format!("square on step: {}", i)))?;
             if *bit{
@@ -538,7 +558,7 @@ impl<E: Engine> AllocatedNum<E> {
     {
         let inv = cs.alloc(|| "ephemeral inverse", || {
             let tmp = *self.value.get()?;
-            
+
             if tmp.is_zero() {
                 Err(SynthesisError::DivisionByZero)
             } else {
@@ -711,7 +731,7 @@ impl<E: Engine> AllocatedNum<E> {
         };
 
         let delta_inv_value = delta_value.as_ref().map(|delta_value| {
-            let tmp = delta_value.clone(); 
+            let tmp = delta_value.clone();
             if tmp.is_zero() {
                 E::Fr::one() // we can return any number here, it doesn't matter
             } else {
@@ -934,7 +954,7 @@ impl<E: Engine> Num<E> {
         self.value = newval;
         self.lc.as_mut().push((variable.get_variable(), coeff));
     }
-   
+
     pub fn add_bool_with_coeff(
         self,
         one: Variable,
@@ -988,7 +1008,7 @@ impl<E: Engine> Num<E> {
             return Ok(self.unwrap_as_allocated_num());
         }
         let var = AllocatedNum::alloc(
-            cs.namespace(|| "allocate a collapse result"), 
+            cs.namespace(|| "allocate a collapse result"),
             || {
                 let val = *self.get_value().get()?;
 
@@ -997,11 +1017,11 @@ impl<E: Engine> Num<E> {
         )?;
 
         cs.enforce(
-            || "enforce collapse constraint", 
+            || "enforce collapse constraint",
             |_| self.lc - var.get_variable(),
             |lc| lc + CS::one(),
             |lc| lc
-        
+
         );
 
         Ok(var)
@@ -1082,6 +1102,28 @@ mod test {
         AllocatedNum::alloc(&mut cs, || Ok(Fr::one())).unwrap();
 
         assert!(cs.get("num") == Fr::one());
+    }
+
+    #[test]
+    fn test_packed_bits_reduced_to_element() {
+
+        let mut cs = TestConstraintSystem::<Bls12>::new();
+
+        let r1 = Fr::from_str("3").unwrap();
+        let r1 = AllocatedNum::alloc(cs.namespace(||"r1"), || Ok(r1)).unwrap();
+        let r1_bits = r1.into_bits_le_fixed(cs.namespace(||"r1 unpacked into bits"), 2).expect("should be succeed");
+
+        // r2=(r-1)/4 = 0x1cfb69d4ca675f520cce76020268760154ef6900bfff96ffbfffffffc0000000L
+        let r2 = Fr::from_str("13108968793781547619861935127046491459422638125131909455650914674984645296128").unwrap();
+        let r2 = AllocatedNum::alloc(cs.namespace(||"r2"), || Ok(r2)).unwrap();
+        let r2_bits = r2.into_bits_le_fixed(cs.namespace(||"r2 unpacked into bits"), 255).expect("should be succeed");
+
+        let mut r = r1_bits.clone();
+        r.extend(r2_bits.into_iter());
+        assert_eq!(r.len(), 257);
+
+        let r257 = AllocatedNum::pack_bits_reduced_to_element(cs.namespace(||"unlimited unpacked"), &r).expect("should be succeed");
+        assert_eq!(r257.get_value().unwrap(),  Fr::from_str("2").unwrap());
     }
 
     #[test]
@@ -1207,7 +1249,7 @@ mod test {
         assert_eq!(eq.get_value().unwrap(), true);
     }
 
-  
+
 
     #[test]
     fn select_if_equals() {
