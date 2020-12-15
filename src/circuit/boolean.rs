@@ -341,6 +341,38 @@ pub fn u64_into_boolean_vec_le<E: Engine, CS: ConstraintSystem<E>>(
     Ok(bits)
 }
 
+pub fn u8_vec_into_boolean_vec_le<E: Engine, CS: ConstraintSystem<E>>(
+    mut cs: CS,
+    u8_vec: Option<Vec<u8>>
+) -> Result<Vec<Boolean>, SynthesisError>
+{
+    let values = match u8_vec {
+        Some(ref values_ref) => {
+            let mut tmp = Vec::with_capacity(256);
+
+            for value in values_ref {
+                for i in 0..8 {
+                    tmp.push(Some(*value >> i & 1 == 1));
+                }
+            }
+
+            tmp
+        },
+        None => {
+            vec![None; 256]
+        }
+    };
+
+    let bits = values.into_iter().enumerate().map(|(i, b)| {
+        Ok(Boolean::from(AllocatedBit::alloc(
+            cs.namespace(|| format!("bit {}", i)),
+            b
+        )?))
+    }).collect::<Result<Vec<_>, SynthesisError>>()?;
+
+    Ok(bits)
+}
+
 // changes an order of the bits to transform bits in LSB first order into
 // LE bytes. Takes 8 bit chunks and reverses them
 pub fn le_bits_into_le_bytes(bits: Vec<Boolean>) -> Vec<Boolean> {
@@ -365,6 +397,14 @@ pub fn field_into_boolean_vec_le<E: Engine, CS: ConstraintSystem<E>, F: PrimeFie
 
     Ok(v.into_iter().map(|e| Boolean::from(e)).collect())
 }
+
+// pub fn boolean_vec_le_into_field<E: Engine, CS: ConstraintSystem<E>, F: PrimeField>(
+//     cs: CS,
+//     bits: Vec<Boolean>
+// ) -> Option<F>
+// {
+//
+// }
 
 pub fn field_into_allocated_bits_le<E: Engine, CS: ConstraintSystem<E>, F: PrimeField>(
     mut cs: CS,
