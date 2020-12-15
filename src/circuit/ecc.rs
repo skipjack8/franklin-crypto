@@ -541,6 +541,36 @@ impl<E: JubjubEngine> EdwardsPoint<E> {
         ))
     }
 
+    pub fn negate<CS>(&self, mut cs: CS, params: &E::Params) -> Result<Self, SynthesisError>
+    where
+        CS: ConstraintSystem<E>
+    {
+        let x = AllocatedNum::alloc(cs.namespace(||"x"), ||{
+            Ok(*self.x.get_value().get()?)
+        })?;
+        cs.enforce(
+            ||"x equal to x",
+            |lc| lc + self.x.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc + x.get_variable()
+        );
+
+        let y = AllocatedNum::alloc(cs.namespace(||"y"), ||{
+            let mut tmp = *self.y.get_value().get()?;
+            tmp.negate();
+            Ok(tmp)
+        })?;
+
+        cs.enforce(
+            ||"y negate",
+            |lc| lc + self.y.get_variable() + y.get_variable(),
+            |lc| lc + CS::one(),
+            |lc| lc
+        );
+
+        Ok(EdwardsPoint{x: x, y: y})
+    }
+
     pub fn double<CS>(&self, mut cs: CS, params: &E::Params) -> Result<Self, SynthesisError>
     where
         CS: ConstraintSystem<E>,
