@@ -1,17 +1,17 @@
-extern crate franklin_crypto;
+extern crate hi_crypto;
 extern crate bellman;
 extern crate rand;
 
 use std::time::{Duration, Instant};
-use franklin_crypto::jubjub::{
+use hi_crypto::jubjub::{
     JubjubBls12,
     edwards,
     fs,
 };
-use franklin_crypto::circuit::sapling::{
+use hi_crypto::circuit::sapling::{
     Spend
 };
-use franklin_crypto::primitives::{
+use hi_crypto::primitives::{
     Diversifier,
     ProofGenerationKey,
     ValueCommitment

@@ -4,7 +4,7 @@ description = "Cryptographic library for SNARK gadgets"
 #documentation = "https://github.com/matter-labs/sapling-crypto"
 homepage = "https://github.com/matter-labs/sapling-crypto"
 license = "MIT/Apache-2.0"
-name = "franklin-crypto"
+name = "hi-crypto"
 #repository = "https://github.com/matter-labs/sapling-crypto"
 version = "0.0.5"
 
